@@ -1,26 +1,19 @@
-const primitiveTypes = [
-    "bigint",
-    "boolean",
-    "function",
-    "number",
-    "object",
-    "string",
-    "symbol",
-    "undefined",
-];
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.PropertyRequiredTypeError = exports.PropertyTypeError = void 0;
+exports.isNonNullableProp = isNonNullableProp;
+exports.isValueOfType = isValueOfType;
 class Property {
     #objectType;
     #key;
     #type;
-    #value;
-    #valueType;
-    #valueConstructor;
+    #valueFound;
     #caller;
     constructor(params) {
         this.objectType = params?.objectType;
         this.key = params?.key;
         this.type = params?.type;
-        this.value = params?.value;
+        this.valueFound = params?.value;
         this.caller = {
             caller: params?.caller,
             callerClass: params?.callerClass,
@@ -47,19 +40,15 @@ class Property {
     get type() {
         return this.#type;
     }
-    set value(value) {
-        this.#value = value;
-        this.#valueType = typeof value;
-        this.#valueConstructor = value?.constructor.name;
+    set valueFound(value) {
+        this.#valueFound = {
+            value: value,
+            type: typeof value,
+            constructor: value.constructor.name,
+        };
     }
-    get value() {
-        return this.#value;
-    }
-    get valueType() {
-        return this.#valueType;
-    }
-    get valueConstructor() {
-        return this.#valueConstructor;
+    get valueFound() {
+        return this.#valueFound;
     }
     set caller(value) {
         this.#caller =
@@ -84,7 +73,24 @@ class Property {
                     : String(type);
     }
 }
-export class PropertyTypeError extends TypeError {
+class PropertyTypeError extends TypeError {
+    #property;
+    valueFound;
+    constructor(property) {
+        super();
+        this.property = property;
+    }
+    set property(value) {
+        this.#property = value instanceof Property ? value : new Property(value);
+        this.message = `Property '${this.#property.key}' in type '${this.#property.objectType}' must be of type '${this.#property.type}'`;
+        this.valueFound = this.#property.valueFound;
+    }
+    get property() {
+        return this.#property;
+    }
+}
+exports.PropertyTypeError = PropertyTypeError;
+class PropertyRequiredTypeError extends TypeError {
     #property;
     constructor(property) {
         super();
@@ -92,27 +98,14 @@ export class PropertyTypeError extends TypeError {
     }
     set property(value) {
         this.#property = value instanceof Property ? value : new Property(value);
-        this.message = `Property '${this.#property.key}' in type '${this.#property.objectType}' must be of type '${this.#property.type}'\nFound: ${String(this.#property.value)}\nof type: '${this.#property.valueType}' and constructor: '${this.#property.valueConstructor}'`;
+        this.message = `Property '${this.#property.key}' in type '${this.#property.objectType}' is '${String(this.#property.valueFound?.value)}' but is required in method '${this.#property.caller}'`;
     }
     get property() {
         return this.#property;
     }
 }
-export class PropertyRequiredTypeError extends TypeError {
-    #property;
-    constructor(property) {
-        super();
-        this.property = property;
-    }
-    set property(value) {
-        this.#property = value instanceof Property ? value : new Property(value);
-        this.message = `Property '${this.#property.key}' in type '${this.#property.objectType}' is '${String(this.#property.value)}' but is required in method '${this.#property.caller}'`;
-    }
-    get property() {
-        return this.#property;
-    }
-}
-export function isNonNullableProp(value, objectType, key, caller, callerClass) {
+exports.PropertyRequiredTypeError = PropertyRequiredTypeError;
+function isNonNullableProp(value, objectType, key, caller, callerClass) {
     if (value === undefined || value === null)
         throw new PropertyRequiredTypeError({
             objectType: objectType,
@@ -123,21 +116,21 @@ export function isNonNullableProp(value, objectType, key, caller, callerClass) {
         });
     return true;
 }
-class MyClass {
-    first;
-    last;
-    age;
-    constructor(params, options) {
-        this.first = params.f;
-        this.last = params.l;
-        this.age = params.a;
+function isValueOfType(value, types, objectType, key) {
+    function isValid(type) {
+        return typeof type === "string"
+            ? typeof value === type
+            : typeof type === "function"
+                ? value.constructor.name === type.name
+                : value === null || value === undefined;
     }
-    full() {
+    const typesArray = types instanceof Array ? types : [types];
+    if (!typesArray.some(isValid))
         throw new PropertyTypeError({
-            objectType: this,
-            key: "first",
-            type: "string",
-            value: 1234,
+            objectType: objectType,
+            key: key,
+            type: types,
+            value: value,
         });
-    }
+    return true;
 }

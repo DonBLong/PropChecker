@@ -1,12 +1,13 @@
 {
-  "name": "propchecker",
+  "name": "@donblong/propchecker",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "pretest": "tsc",
+    "test": "node ./test.js"
   },
   "keywords": [],
-  "author": "",
+  "author": "DonBLong",
   "license": "ISC",
-  "description": ""
+  "description": "Type-checker and null-checker for class and object properties"
 }

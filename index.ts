@@ -1,4 +1,4 @@
-type Primitives = {
+interface PrimitiveTypes {
   bigint: bigint;
   boolean: boolean;
   function: (...args: any[]) => any;
@@ -8,42 +8,44 @@ type Primitives = {
   symbol: symbol;
   undefined: undefined;
   null: null;
-};
-interface ObjectType {
-  [key: string]: any;
 }
-type ClassType = abstract new (...args: any) => any;
-type Class<C extends ClassType> = C extends new (...args: any) => infer T
+type Constructor = abstract new (...args: any) => any;
+type Class<C> = C extends abstract new (...args: any) => infer T ? T : never;
+type Key<O> = O extends Constructor ? keyof Class<O> : keyof O;
+type Type = keyof PrimitiveTypes | Constructor | object;
+type Value<T> = T extends keyof PrimitiveTypes
+  ? PrimitiveTypes[T]
+  : T extends Constructor
+  ? Class<T>
+  : T extends object
   ? T
   : never;
-type Key<O> = O extends ClassType ? keyof Class<O> : keyof O;
 
 interface PropertyParams<O> {
   objectType: O;
   key: Key<O>;
-  type:
-    | keyof Primitives
-    | Function
-    | object
-    | (keyof Primitives | Function | object)[];
+  type: Type | Type[];
   value: any;
   caller: Function;
   callerClass: Function;
+}
+interface ValueFound {
+  value: any;
+  type: keyof PrimitiveTypes;
+  constructor: string;
 }
 
 class Property<O> {
   #objectType?: string;
   #key?: string;
   #type?: string;
-  #value?: any;
-  #valueType?: string;
-  #valueConstructor?: string;
+  #valueFound?: ValueFound;
   #caller?: string;
   constructor(params?: Partial<PropertyParams<O>>) {
     this.objectType = params?.objectType;
     this.key = params?.key;
     this.type = params?.type;
-    this.value = params?.value;
+    this.valueFound = params?.value;
     this.caller = {
       caller: params?.caller,
       callerClass: params?.callerClass,
@@ -72,19 +74,15 @@ class Property<O> {
   get type() {
     return this.#type;
   }
-  set value(value: any) {
-    this.#value = value;
-    this.#valueType = typeof value;
-    this.#valueConstructor = value?.constructor.name;
+  set valueFound(value: PropertyParams<O>["value"]) {
+    this.#valueFound = {
+      value: value,
+      type: typeof value,
+      constructor: value.constructor.name,
+    };
   }
-  get value() {
-    return this.#value;
-  }
-  get valueType() {
-    return this.#valueType;
-  }
-  get valueConstructor() {
-    return this.#valueConstructor;
+  get valueFound(): ValueFound | undefined {
+    return this.#valueFound;
   }
   set caller(
     value:
@@ -117,6 +115,7 @@ class Property<O> {
 
 export class PropertyTypeError<O> extends TypeError {
   #property?: Property<O>;
+  valueFound?: Property<O>["valueFound"];
   constructor(property?: Partial<PropertyParams<O>>) {
     super();
     this.property = property;
@@ -125,11 +124,8 @@ export class PropertyTypeError<O> extends TypeError {
     this.#property = value instanceof Property ? value : new Property(value);
     this.message = `Property '${this.#property.key}' in type '${
       this.#property.objectType
-    }' must be of type '${this.#property.type}'\nFound: ${String(
-      this.#property.value
-    )}\nof type: '${this.#property.valueType}' and constructor: '${
-      this.#property.valueConstructor
-    }'`;
+    }' must be of type '${this.#property.type}'`;
+    this.valueFound = this.#property.valueFound;
   }
   get property() {
     return this.#property;
@@ -146,9 +142,9 @@ export class PropertyRequiredTypeError<O> extends TypeError {
     this.#property = value instanceof Property ? value : new Property(value);
     this.message = `Property '${this.#property.key}' in type '${
       this.#property.objectType
-    }' is '${String(this.#property.value)}' but is required in method '${
-      this.#property.caller
-    }'`;
+    }' is '${String(
+      this.#property.valueFound?.value
+    )}' but is required in method '${this.#property.caller}'`;
   }
   get property() {
     return this.#property;
@@ -157,9 +153,9 @@ export class PropertyRequiredTypeError<O> extends TypeError {
 
 export function isNonNullableProp<O, P>(
   value: P,
-  objectType?: PropertyParams<O>["objectType"],
-  key?: PropertyParams<O>["key"],
-  caller?: PropertyParams<O>["caller"],
+  objectType: PropertyParams<O>["objectType"],
+  key: PropertyParams<O>["key"],
+  caller: PropertyParams<O>["caller"],
   callerClass?: PropertyParams<O>["callerClass"]
 ): value is NonNullable<P> {
   if (value === undefined || value === null)
@@ -173,60 +169,26 @@ export function isNonNullableProp<O, P>(
   return true;
 }
 
-export function isValueOfType<O, T extends keyof Primitives | ClassType>(
+export function isValueOfType<O, T extends Type>(
   value: any,
-  types: T[],
-  objectType?: PropertyParams<O>["objectType"],
-  key?: PropertyParams<O>["key"],
-  caller?: PropertyParams<O>["caller"],
-  callerClass?: PropertyParams<O>["callerClass"]
-): value is T extends keyof Primitives
-  ? Primitives[T]
-  : T extends ClassType
-  ? Class<T>
-  : never {
-  function isValid(type: keyof Primitives | ClassType, value: any) {
+  types: T | T[],
+  objectType: PropertyParams<O>["objectType"],
+  key: PropertyParams<O>["key"]
+): value is Value<T> {
+  function isValid(type: T) {
     return typeof type === "string"
       ? typeof value === type
       : typeof type === "function"
       ? value.constructor.name === type.name
       : value === null || value === undefined;
   }
-  const valid = types.some((t) => isValid(t, value));
-  if (!valid)
-    throw new PropertyRequiredTypeError({
+  const typesArray = types instanceof Array ? types : [types];
+  if (!typesArray.some(isValid))
+    throw new PropertyTypeError({
       objectType: objectType,
       key: key,
+      type: types,
       value: value,
-      caller: caller,
-      callerClass: callerClass,
     });
-  return valid;
-}
-
-class MyClass {
-  first: string;
-  last: string;
-  age: number;
-  constructor(
-    params: { f: string; l: string; a: number },
-    options?: { encoding: string }
-  ) {
-    this.first = params.f;
-    this.last = params.l;
-    this.age = params.a;
-  }
-  full() {
-    throw new PropertyTypeError({
-      objectType: this as MyClass,
-      key: "first",
-      type: "string",
-      value: 1234,
-    });
-  }
-}
-
-function doStuff(v: any) {
-  if (!isValueOfType(v, [MyClass, "string", "boolean"])) return;
-  v;
+  return true;
 }
