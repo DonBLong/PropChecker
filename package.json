@@ -1,5 +1,6 @@
 {
   "name": "@donblong/propchecker",
+  "description": "Checks non-nullablity and type of an object's property",
   "version": "1.0.0",
   "main": "dist/propchecker.umd.js",
   "module": "dist/propchecker.es.js",
