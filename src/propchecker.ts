@@ -1,4 +1,4 @@
-interface PrimitiveTypes {
+export interface PrimitiveTypes {
   bigint: bigint;
   boolean: boolean;
   function: (...args: any[]) => any;
@@ -25,14 +25,14 @@ interface PropertyParams<O> {
   objectType: O;
   key: Key<O>;
   type: Type | Type[];
-  value: any;
+  value: unknown;
   caller: Function;
   callerClass: Function;
 }
 interface ValueFound {
-  value: any;
+  value: unknown;
   type: keyof PrimitiveTypes;
-  constructor: string;
+  constructor: string | undefined;
 }
 
 class Property<O> {
@@ -78,7 +78,7 @@ class Property<O> {
     this.#valueFound = {
       value: value,
       type: typeof value,
-      constructor: value.constructor.name,
+      constructor: value?.constructor.name,
     };
   }
   get valueFound(): ValueFound | undefined {
@@ -100,15 +100,15 @@ class Property<O> {
   get caller() {
     return this.#caller;
   }
-  #typeToString(type: any): string {
+  #typeToString<T>(type: T): string {
     return typeof type === "string"
       ? type
       : typeof type === "function"
       ? type.name
       : typeof type === "object"
-      ? type.constructor.name === "Object"
+      ? type?.constructor.name === "Object"
         ? JSON.stringify(type)
-        : type.constructor.name
+        : String(type?.constructor.name)
       : String(type);
   }
 }
@@ -151,26 +151,31 @@ export class PropertyRequiredTypeError<O> extends TypeError {
   }
 }
 
-export function isNonNullableProp<O, P>(
+export function isNonNullable<O, P>(
   value: P,
-  objectType: PropertyParams<O>["objectType"],
-  key: PropertyParams<O>["key"],
-  caller: PropertyParams<O>["caller"],
-  callerClass?: PropertyParams<O>["callerClass"]
+  throwError?: {
+    objectType: PropertyParams<O>["objectType"];
+    key: PropertyParams<O>["key"];
+    caller?: PropertyParams<O>["caller"];
+    callerClass?: PropertyParams<O>["callerClass"];
+  }
 ): value is NonNullable<P> {
-  if (value === undefined || value === null)
-    throw new PropertyRequiredTypeError({
-      objectType: objectType,
-      key: key,
-      value: value,
-      caller: caller,
-      callerClass: callerClass,
-    });
+  if (value === undefined || value === null) {
+    if (throwError)
+      throw new PropertyRequiredTypeError({
+        objectType: throwError.objectType,
+        key: throwError.key,
+        value: value,
+        caller: throwError.caller,
+        callerClass: throwError.callerClass,
+      });
+    return false;
+  }
   return true;
 }
 
-export function isValueOfType<O, T extends Type>(
-  value: any,
+export function isOfType<O, T extends Type>(
+  value: unknown,
   types: T | T[],
   objectType: PropertyParams<O>["objectType"],
   key: PropertyParams<O>["key"]
@@ -179,7 +184,7 @@ export function isValueOfType<O, T extends Type>(
     return typeof type === "string"
       ? typeof value === type
       : typeof type === "function"
-      ? value.constructor.name === type.name
+      ? value?.constructor.name === type.name
       : value === null || value === undefined;
   }
   const typesArray = types instanceof Array ? types : [types];
