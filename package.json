@@ -14,6 +14,20 @@
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
+  "keywords": [
+    "type",
+    "typescript",
+    "type-checking",
+    "null",
+    "runtime",
+    "runtime-checking",
+    "runtime-type-checker",
+    "non-nullable",
+    "property",
+    "object",
+    "error",
+    "typeerror"
+  ],
   "devDependencies": {
     "typescript": "^5.9.2",
     "vite": "^7.1.0",
